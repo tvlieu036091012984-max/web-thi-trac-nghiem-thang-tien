@@ -1,0 +1,314 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
+import { Clock, CheckCircle2, AlertTriangle, LayoutList, Send, Loader2, User } from 'lucide-react'
+import { DndContext, useDraggable, useDroppable, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { createClient } from '@/utils/supabase/client'
+
+// --- COMPONENT HỖ TRỢ KÉO THẢ ---
+const DraggableWord = ({ id, text }: { id: string, text: string }) => {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id })
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
+  return (
+    <button ref={setNodeRef} {...listeners} {...attributes} style={style}
+      className={`px-4 py-2 text-sm font-bold rounded-xl shadow-sm border active:scale-105 transition-transform touch-none ${
+        isDragging ? 'bg-orange-500 text-white border-orange-500 z-50 shadow-xl' : 'bg-white border-slate-200 text-slate-700'
+      }`}>
+      {text}
+    </button>
+  )
+}
+
+const DroppableZone = ({ id, filledWord }: { id: string, filledWord?: string }) => {
+  const { isOver, setNodeRef } = useDroppable({ id })
+  return (
+    <span ref={setNodeRef} className={`inline-flex items-center justify-center min-w-[120px] h-9 mx-2 px-3 border-2 border-dashed rounded-lg text-sm font-bold transition-colors ${
+        isOver ? 'bg-blue-50 border-blue-400' : filledWord ? 'bg-blue-100 border-blue-500 text-blue-800' : 'bg-slate-50 border-slate-300'
+      }`}>
+      {filledWord || 'Trống'}
+    </span>
+  )
+}
+
+export default function RealExamInterface() {
+  const params = useParams()
+  const examId = params.id as string
+
+  const [examData, setExamData] = useState<any>(null)
+  const [questions, setQuestions] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  
+  const [step, setStep] = useState<'start' | 'testing' | 'confirm' | 'result'>('start')
+  const [studentName, setStudentName] = useState('')
+  const [timeLeft, setTimeLeft] = useState(0)
+  const [answers, setAnswers] = useState<Record<string, any>>({})
+  const [score, setScore] = useState(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
+  )
+
+  useEffect(() => {
+    const fetchExam = async () => {
+      try {
+        const supabase = createClient()
+        const { data: exam, error: examError } = await supabase.from('exams').select('*').eq('id', examId).single()
+        if (examError) throw new Error('Không tìm thấy đề thi hoặc mã đề sai!')
+        
+        const { data: qs, error: qsError } = await supabase.from('questions').select('*').eq('exam_id', examId).order('part', { ascending: true })
+        if (qsError) throw new Error('Lỗi khi tải câu hỏi!')
+
+        setExamData(exam)
+        setQuestions(qs)
+        setTimeLeft(exam.config.timeLimit * 60)
+        setLoading(false)
+      } catch (err: any) {
+        setError(err.message)
+        setLoading(false)
+      }
+    }
+    fetchExam()
+  }, [examId])
+
+  useEffect(() => {
+    if (step !== 'testing' || timeLeft <= 0) return
+    const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000)
+    if (timeLeft === 0) handleCalculateAndSubmit()
+    return () => clearInterval(timer)
+  }, [step, timeLeft])
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0')
+    const s = (seconds % 60).toString().padStart(2, '0')
+    return `${m}:${s}`
+  }
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>
+  if (error) return <div className="min-h-screen flex items-center justify-center bg-slate-100"><div className="bg-white p-8 rounded-xl text-red-500 font-bold">{error}</div></div>
+
+  if (step === 'start') return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
+      <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-lg border border-slate-200">
+        <div className="flex justify-center mb-6"><LayoutList size={48} className="text-blue-600" /></div>
+        <h1 className="text-xl font-bold text-center text-slate-800 mb-6">{examData?.title}</h1>
+        
+        <div className="bg-blue-50 p-6 rounded-xl mb-6">
+          <label className="block text-sm font-bold text-blue-900 mb-2">Họ và tên học sinh:</label>
+          <div className="relative">
+            <User className="absolute left-3 top-3 text-blue-400 w-5 h-5" />
+            <input 
+              type="text" 
+              placeholder="Nhập tên của em..."
+              value={studentName}
+              onChange={(e) => setStudentName(e.target.value)}
+              className="w-full pl-10 p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-between text-sm text-slate-600 border-t pt-4 mb-8">
+          <span>Thời gian: <strong className="text-slate-800">{examData?.config.timeLimit} phút</strong></span>
+          <span>Số câu: <strong className="text-slate-800">{questions.length}</strong></span>
+        </div>
+        
+        <button 
+          onClick={() => { if(!studentName.trim()) { alert("Em vui lòng nhập tên trước khi thi nhé!"); return; }; setStep('testing') }} 
+          className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl transition shadow-md"
+        >
+          Bắt đầu thi
+        </button>
+      </div>
+    </div>
+  )
+const handleCalculateAndSubmit = async () => {
+    setIsSubmitting(true)
+    let totalCorrect = 0
+    let maxPossible = questions.length
+
+    questions.forEach((q) => {
+      if (q.type === 'single') {
+        if (answers[q.id] === q.correct_answer) totalCorrect += 1
+      } else if (q.type === 'true_false') {
+        let tfCorrectCount = 0
+        q.options.forEach((opt: any, idx: number) => {
+          if (answers[`${q.id}_${idx}`] === opt.correct) tfCorrectCount += 1
+        })
+        if (tfCorrectCount === q.options.length) totalCorrect += 1 
+      } else if (q.type === 'drag_drop') {
+        let isAllCorrect = true
+        q.dropzones.forEach((dz: string) => {
+          if (answers[dz] !== q.correct_answer[dz]) isAllCorrect = false
+        })
+        if (isAllCorrect) totalCorrect += 1
+      }
+    })
+
+    const finalScore = Number(((totalCorrect / maxPossible) * 10).toFixed(2))
+    setScore(finalScore)
+
+    try {
+      const supabase = createClient()
+      await supabase.from('submissions').insert({
+        exam_id: examId,
+        student_name: studentName,
+        score: finalScore,
+        answers_log: answers
+      })
+      setStep('result')
+    } catch (err) {
+      alert("Có lỗi khi lưu kết quả. Vui lòng báo cho giáo viên!")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  if (step === 'testing') return (
+    <div className="min-h-screen bg-slate-100 font-sans pb-24">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 shadow-sm flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center"><Clock className="text-blue-600 w-5 h-5" /></div>
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Thời gian còn lại</span>
+            <span className={`text-lg font-black leading-none ${timeLeft < 300 ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>{formatTime(timeLeft)}</span>
+          </div>
+        </div>
+        <button onClick={() => setStep('confirm')} className="bg-orange-500 text-white text-sm font-bold px-5 py-2.5 rounded-full flex items-center shadow-lg active:scale-95 transition-transform">
+          <Send className="w-4 h-4 mr-1.5" /> Nộp bài
+        </button>
+      </header>
+
+      <main className="p-4 max-w-2xl mx-auto space-y-6 mt-2">
+        <DndContext sensors={sensors} onDragEnd={(e) => { if (e.over) setAnswers(prev => ({ ...prev, [e.over!.id]: e.active.id })) }}>
+          
+          {/* PHẦN I */}
+          {questions.filter(q => q.type === 'single').length > 0 && (
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+              <h2 className="text-xs font-black text-blue-600 uppercase mb-4 tracking-wider">Phần I. Trắc nghiệm (1 đáp án)</h2>
+              {questions.filter(q => q.type === 'single').map((q) => (
+                <div key={q.id} className="mb-6">
+                  <div className="text-[15px] font-semibold text-slate-800 mb-4 leading-relaxed" dangerouslySetInnerHTML={{ __html: q.content }} />
+                  <div className="space-y-3">
+                    {q.options.map((opt: string, idx: number) => {
+                      const isSelected = answers[q.id] === idx
+                      return (
+                        <button key={idx} onClick={() => setAnswers({ ...answers, [q.id]: idx })}
+                          className={`w-full text-left p-4 rounded-xl border-2 flex items-center active:scale-[0.98] ${isSelected ? 'bg-blue-50 border-blue-500' : 'bg-white border-slate-100'}`}>
+                          <span className={`w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 text-sm font-bold mr-3 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                            {['A','B','C','D'][idx]}
+                          </span>
+                          <div className={`text-[15px] ${isSelected ? 'text-blue-900 font-medium' : 'text-slate-700'}`} dangerouslySetInnerHTML={{ __html: opt }} />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* PHẦN II */}
+          {questions.filter(q => q.type === 'true_false').length > 0 && (
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+              <h2 className="text-xs font-black text-orange-500 uppercase mb-4 tracking-wider">Phần II. Đúng / Sai</h2>
+              {questions.filter(q => q.type === 'true_false').map(q => (
+                <div key={q.id} className="mb-6">
+                  <div className="text-[15px] font-semibold text-slate-800 mb-4 leading-relaxed" dangerouslySetInnerHTML={{ __html: q.content }} />
+                  <div className="space-y-4">
+                    {q.options.map((opt: any, idx: number) => {
+                      const ansKey = `${q.id}_${idx}`
+                      return (
+                        <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                          <div className="text-[14px] text-slate-700 mb-3" dangerouslySetInnerHTML={{ __html: opt.text }} />
+                          <div className="flex space-x-3">
+                            <button onClick={() => setAnswers({ ...answers, [ansKey]: true })} className={`flex-1 py-3 rounded-xl font-bold border-2 ${answers[ansKey] === true ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-200 text-slate-500'}`}>Đúng</button>
+                            <button onClick={() => setAnswers({ ...answers, [ansKey]: false })} className={`flex-1 py-3 rounded-xl font-bold border-2 ${answers[ansKey] === false ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-slate-200 text-slate-500'}`}>Sai</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* PHẦN III (ĐÃ FIX: KHÔI PHỤC CHUẨN TỪNG Ô DROPPABLE ZONE) */}
+          {questions.filter(q => q.type === 'drag_drop').length > 0 && (
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+              <h2 className="text-xs font-black text-purple-600 uppercase mb-4 flex items-center">
+                Phần III. Kéo thả từ khóa <span className="ml-2 px-2 py-0.5 bg-purple-100 rounded-full text-[10px]">Chạm & Giữ</span>
+              </h2>
+              {questions.filter(q => q.type === 'drag_drop').map(q => {
+                let renderContent = q.content
+                if (q.dropzones && q.dropzones.length > 0) {
+                  let dzIndex = 0
+                  renderContent = q.content.replace(/_____/g, () => `[${q.dropzones[dzIndex++]}]`)
+                }
+                const parts = renderContent.split(/(\[.*?\])/)
+
+                return (
+                  <div key={q.id} className="mb-6">
+                    <div className="text-[15px] font-medium text-slate-800 leading-loose bg-slate-50 p-5 rounded-xl border border-slate-100 mb-6">
+                      {parts.map((part: string, i: number) => {
+                        if (part.startsWith('[') && part.endsWith(']')) {
+                          const dropId = part.slice(1, -1)
+                          return <DroppableZone key={dropId} id={dropId} filledWord={answers[dropId]} />
+                        }
+                        return <span key={i} dangerouslySetInnerHTML={{ __html: part }} />
+                      })}
+                    </div>
+                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                      <p className="text-xs font-bold text-purple-400 uppercase mb-3">Kéo các từ dưới đây lên chỗ trống:</p>
+                      <div className="flex flex-wrap gap-2.5">
+                        {q.options.map((word: string) => {
+                          if (Object.values(answers).includes(word)) return null
+                          return <DraggableWord key={word} id={word} text={word} />
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </section>
+          )}
+        </DndContext>
+      </main>
+    </div>
+  )
+
+  if (step === 'confirm') return (
+    <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+      <div className="bg-white p-8 rounded-3xl text-center w-full max-w-sm">
+        <AlertTriangle size={56} className="text-orange-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold mb-2">Chắc chắn nộp bài?</h2>
+        <p className="text-slate-500 text-sm mb-6">Em sẽ không thể sửa lại bài sau khi nộp.</p>
+        <div className="flex space-x-3">
+          <button onClick={() => setStep('testing')} disabled={isSubmitting} className="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-slate-700">Hủy</button>
+          <button onClick={handleCalculateAndSubmit} disabled={isSubmitting} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold flex justify-center items-center">
+            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Nộp bài"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (step === 'result') return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
+      <div className="bg-white p-8 rounded-3xl text-center w-full max-w-sm shadow-sm border border-slate-200">
+        <CheckCircle2 size={56} className="text-green-500 mx-auto mb-4" />
+        <h2 className="font-bold text-slate-800 mb-2">Chúc mừng {studentName}!</h2>
+        <p className="text-sm text-slate-500">Em đã hoàn thành xuất sắc bài thi.</p>
+        <div className="text-6xl font-black text-blue-600 my-8">{score}<span className="text-2xl text-slate-400 font-bold">/10</span></div>
+        <div className="bg-slate-50 p-4 rounded-xl text-sm font-medium text-slate-700">
+          Kết quả của em đã được gửi cho Giáo viên!
+        </div>
+      </div>
+    </div>
+  )
+
+  return null
+}

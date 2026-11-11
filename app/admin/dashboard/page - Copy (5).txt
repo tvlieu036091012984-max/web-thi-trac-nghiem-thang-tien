@@ -1,0 +1,324 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
+import { LayoutList, Copy, Check, Users, Calendar, Loader2, Trash2, GraduationCap, ShieldCheck, RefreshCw, Upload, Home } from 'lucide-react'
+import Link from 'next/link'
+
+export default function AdminDashboard() {
+  const [exams, setExams] = useState<any[]>([])
+  const [submissions, setSubmissions] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [copiedId, setCopiedId] = useState<string | null>('')
+  const [activeTab, setActiveTab] = useState<'exams' | 'submissions'>('exams')
+  
+  // --- STATE PHÂN QUYỀN ---
+  const [userRole, setUserRole] = useState<string>('')
+  const [teacherUsername, setTeacherUsername] = useState<string>('')
+  const router = useRouter()
+
+  useEffect(() => {
+    const role = localStorage.getItem('user_role')
+    const tUser = localStorage.getItem('teacher_username') || 'ADMIN'
+    
+    if (!role) {
+      router.push('/admin/login')
+      return
+    }
+    setUserRole(role)
+    setTeacherUsername(tUser)
+    fetchData()
+  }, [router])
+
+  const fetchData = async () => {
+    try {
+      const supabase = createClient()
+      
+      const { data: examData } = await supabase.from('exams').select('*').order('created_at', { ascending: false })
+      if (examData) setExams(examData)
+
+      const { data: subData } = await supabase.from('submissions').select('*, exams(title)').order('created_at', { ascending: false })
+      if (subData) setSubmissions(subData)
+
+      setLoading(false)
+    } catch (err) {
+      console.error("Lỗi tải dữ liệu:", err)
+      setLoading(false)
+    }
+  }
+
+  const handleCopyLink = (examId: string) => {
+    const link = `${window.location.origin}/exam/${examId}`
+    navigator.clipboard.writeText(link)
+    setCopiedId(examId)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const handleDeleteExam = async (examId: string, examCreator?: string) => {
+    // Kiểm tra quyền xóa: ADMIN xóa tất cả, Giáo viên chỉ xóa đề do chính mình tạo
+    if (userRole !== 'ADMIN' && examCreator && examCreator !== teacherUsername) {
+      alert("⚠️ Bạn không có quyền xóa đề thi do giáo viên khác tạo!")
+      return
+    }
+
+    if (!confirm("Thầy có chắc chắn muốn xóa đề thi này không?")) return
+    try {
+      const supabase = createClient()
+      await supabase.from('questions').delete().eq('exam_id', examId)
+      await supabase.from('exams').delete().eq('id', examId)
+      setExams(exams.filter(e => e.id !== examId))
+    } catch (err) {
+      alert("Lỗi khi xóa đề thi!")
+    }
+  }
+
+  const exportToCSV = () => {
+    if (submissions.length === 0) {
+      alert("Chưa có dữ liệu điểm số để xuất file!")
+      return
+    }
+
+    let csvContent = "\uFEFFSTT,Học Sinh,Tên Đề Thi,Điểm Số,Thời Gian Nộp\n"
+    
+    submissions.forEach((sub, index) => {
+      const studentName = `"${sub.student_name || ''}"`
+      const examTitle = `"${sub.exams?.title || 'Đề kiểm tra KHTN'}"`
+      const score = sub.score !== undefined ? sub.score : 0
+      const time = `"${new Date(sub.created_at).toLocaleString('vi-VN')}"`
+      
+      csvContent += `${index + 1},${studentName},${examTitle},${score},${time}\n`
+    })
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `Bang_Diem_Lop_Hoc_Thang_Tien_${new Date().toISOString().slice(0,10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const handleResetNewSchoolYear = async () => {
+    if (userRole !== 'ADMIN') {
+      alert("⚠️ Tính năng này chỉ dành cho tài khoản ADMIN tối cao!")
+      return
+    }
+
+    const confirmText = prompt("⚠️ CẢNH BÁO: Thao tác này sẽ XÓA SẠCH toàn bộ đề thi, câu hỏi và điểm số học sinh trên hệ thống!\n\nĐể xác nhận, thầy vui lòng gõ chính xác chữ: RESET NAM HOC")
+    
+    if (confirmText !== "RESET NAM HOC") {
+      alert("Đã hủy thao tác reset.")
+      return
+    }
+
+    try {
+      const supabase = createClient()
+      
+      const { error: errSub } = await supabase.from('submissions').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      if (errSub) throw new Error("Lỗi khi xóa submissions: " + errSub.message)
+
+      const { error: errQ } = await supabase.from('questions').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      if (errQ) throw new Error("Lỗi khi xóa questions: " + errQ.message)
+
+      const { error: errExam } = await supabase.from('exams').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      if (errExam) throw new Error("Lỗi khi xóa exams: " + errExam.message)
+
+      alert("🎉 Đã reset hệ thống thành công! Toàn bộ dữ liệu cũ đã được làm sạch cho năm học mới.")
+      window.location.reload()
+    } catch (err: any) {
+      alert("Lỗi khi reset hệ thống: " + err.message)
+    }
+  }
+if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-between font-sans">
+      <div className="p-6 md:p-10 max-w-6xl mx-auto w-full">
+        
+        {/* THANH HEADER TIÊU ĐỀ & PHÂN QUYỀN */}
+        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-md shadow-blue-200">
+              <GraduationCap className="text-white w-8 h-8" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center">
+                LỚP HỌC THĂNG TIẾN
+              </h1>
+              <p className="text-blue-600 font-bold text-sm mt-0.5 flex items-center">
+                <ShieldCheck className="w-4 h-4 mr-1.5" /> {userRole === 'ADMIN' ? 'Quản trị viên: ADMIN Tối Cao' : `Giáo viên: ${teacherUsername}`}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/admin/upload"
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-sm transition flex items-center space-x-1.5 active:scale-95"
+            >
+              <Upload className="w-4 h-4" /> <span>Tải Đề Lên</span>
+            </Link>
+
+            <Link
+              href="/"
+              className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-4 py-3 rounded-2xl shadow-sm transition flex items-center space-x-1.5 active:scale-95"
+            >
+              <Home className="w-4 h-4" /> <span>Trang Chủ</span>
+            </Link>
+
+            {/* CHỈ ADMIN MỚI THẤY NÚT RESET NĂM HỌC */}
+            {userRole === 'ADMIN' && (
+              <button
+                onClick={handleResetNewSchoolYear}
+                className="bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-sm transition flex items-center space-x-1.5 active:scale-95"
+                title="Xóa sạch dữ liệu cũ để chuẩn bị cho năm học mới"
+              >
+                <RefreshCw className="w-4 h-4 mr-1 animate-spin-slow" /> <span>Reset Năm Học</span>
+              </button>
+            )}
+
+            {/* NÚT ĐĂNG XUẤT */}
+            <button
+              onClick={() => { localStorage.clear(); router.push('/admin/login'); }}
+              className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-sm transition active:scale-95"
+            >
+              🚪 Đăng Xuất
+            </button>
+
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl ml-2">
+              <button 
+                onClick={() => setActiveTab('exams')}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'exams' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                Danh Sách Đề ({exams.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('submissions')}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'submissions' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                Kết Quả ({submissions.length})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* TAB 1: DANH SÁCH ĐỀ THI */}
+        {activeTab === 'exams' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {exams.map((exam) => {
+              // Kiểm tra quyền xóa: ADMIN xóa tất cả, GIAOVIEN chỉ xóa đề do chính mình tạo
+              const canDelete = userRole === 'ADMIN' || !exam.created_by || exam.created_by === teacherUsername
+
+              return (
+                <div key={exam.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="bg-blue-50 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">
+                        Thời gian: {exam.config?.timeLimit || 40} phút
+                      </span>
+                      {canDelete ? (
+                        <button 
+                          onClick={() => handleDeleteExam(exam.id, exam.created_by)}
+                          className="text-slate-300 hover:text-red-500 transition p-1"
+                          title="Xóa đề"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">Đề của GV khác</span>
+                      )}
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 mb-2">{exam.title}</h3>
+                    <p className="text-xs text-slate-400 flex items-center mb-6">
+                      <Calendar className="w-3.5 h-3.5 mr-1" /> Ngày tạo: {new Date(exam.created_at).toLocaleDateString('vi-VN')} {exam.created_by && `• Tạo bởi: ${exam.created_by}`}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                    <span className="text-xs font-mono text-slate-400 truncate max-w-[180px]">ID: {exam.id}</span>
+                    <button 
+                      onClick={() => handleCopyLink(exam.id)}
+                      className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center shadow-sm active:scale-95"
+                    >
+                      {copiedId === exam.id ? <><Check className="w-4 h-4 mr-1.5" /> Đã chép link</> : <><Copy className="w-4 h-4 mr-1.5" /> Copy Link Gửi HS</>}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+            {exams.length === 0 && (
+              <div className="col-span-2 text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300 text-slate-400">
+                Chưa có đề thi nào được tạo. Thầy hãy vào trang Upload để tải đề lên nhé!
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: KẾT QUẢ HỌC SINH NỘP BÀI & NÚT XUẤT EXCEL */}
+        {activeTab === 'submissions' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            
+            <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Tổng số lượt nộp: {submissions.length} học sinh
+              </span>
+              <button
+                onClick={exportToCSV}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-sm flex items-center active:scale-95"
+              >
+                📊 Xuất File Excel / CSV
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-xs font-black text-slate-500 uppercase tracking-wider">
+                    <th className="p-4 pl-6">Học Sinh</th>
+                    <th className="p-4">Tên Đề Thi</th>
+                    <th className="p-4 text-center">Điểm Số</th>
+                    <th className="p-4 pr-6">Thời Gian Nộp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {submissions.map((sub) => (
+                    <tr key={sub.id} className="hover:bg-slate-50 transition">
+                      <td className="p-4 pl-6 font-bold text-slate-800 flex items-center">
+                        <Users className="w-4 h-4 mr-2 text-blue-500" /> {sub.student_name}
+                      </td>
+                      <td className="p-4 text-slate-600 font-medium">{sub.exams?.title || 'Đề kiểm tra KHTN'}</td>
+                      <td className="p-4 text-center">
+                        <span className={`inline-block px-3 py-1 rounded-full font-black text-xs ${sub.score >= 8 ? 'bg-green-100 text-green-700' : sub.score >= 5 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                          {sub.score} / 10
+                        </span>
+                      </td>
+                      <td className="p-4 pr-6 text-slate-400 text-xs">
+                        {new Date(sub.created_at).toLocaleString('vi-VN')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {submissions.length === 0 && (
+              <div className="text-center py-16 text-slate-400">
+                Chưa có học sinh nào nộp bài.
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+
+      <footer className="text-center py-6 text-xs text-slate-400 border-t border-slate-200 bg-white mt-12">
+        Hệ thống học tập thông minh • Phát triển bởi <strong className="text-slate-600">Thầy Trần Văn Liệu</strong> • <span className="text-blue-600 font-bold">Lớp Học Thêm Thăng Tiến</span>
+      </footer>
+    </div>
+  )
+}
