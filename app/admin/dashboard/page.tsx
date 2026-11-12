@@ -38,7 +38,7 @@ export default function AdminDashboard() {
       const { data: examData } = await supabase.from('exams').select('*').order('created_at', { ascending: false })
       if (examData) setExams(examData)
 
-      // Truy vấn an toàn: Lấy submissions và exams riêng biệt rồi map tên đề
+      // Lấy trực tiếp toàn bộ submissions từ Supabase không qua lọc khắt khe
       const { data: subData } = await supabase.from('submissions').select('*').order('created_at', { ascending: false })
       
       if (subData) {
@@ -58,14 +58,14 @@ export default function AdminDashboard() {
       setLoading(false)
     }
   }
-const handleCopyLink = (examId: string) => {
+
+  const handleCopyLink = (examId: string) => {
     const link = `${window.location.origin}/exam/${examId}`
     navigator.clipboard.writeText(link)
     setCopiedId(examId)
     setTimeout(() => setCopiedId(null), 2000)
   }
-
-  const handleDeleteExam = async (examId: string) => {
+const handleDeleteExam = async (examId: string) => {
     if (userRole !== 'ADMIN') {
       alert("⚠️ Bạn là giáo viên, không có quyền xóa đề thi trên hệ thống!")
       return
