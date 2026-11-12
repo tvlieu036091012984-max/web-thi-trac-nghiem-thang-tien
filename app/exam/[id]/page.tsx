@@ -6,9 +6,12 @@ import { Clock, CheckCircle2, AlertTriangle, Send, Loader2, User, Sparkles, Book
 import { DndContext, useDraggable, useDroppable, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { createClient } from '@/utils/supabase/client'
 
-// --- COMPONENT HỖ TRỢ KÉO THẢ (ĐÃ TỐI ƯU VÙNG NHẬN THẢ) ---
-const DraggableWord = ({ id, text }: { id: string, text: string }) => {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id })
+// --- COMPONENT HỖ TRỢ KÉO THẢ (ĐỊNH DANH RIÊNG BIỆT THEO TỪNG CÂU HỎI) ---
+const DraggableWord = ({ id, text, questionId }: { id: string, text: string, questionId: string }) => {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id,
+    data: { word: text, questionId }
+  })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
   return (
     <button ref={setNodeRef} {...listeners} {...attributes} style={style}
@@ -20,21 +23,30 @@ const DraggableWord = ({ id, text }: { id: string, text: string }) => {
   )
 }
 
-const DroppableZone = ({ id, filledWord }: { id: string, filledWord?: string }) => {
-  const { isOver, setNodeRef } = useDroppable({ id })
+const DroppableZone = ({ id, dz, questionId, filledWord, onClear }: { id: string, dz: string, questionId: string, filledWord?: string, onClear?: () => void }) => {
+  const { isOver, setNodeRef } = useDroppable({
+    id,
+    data: { dz, questionId }
+  })
   return (
     <span 
-      ref={setNodeRef} 
+      ref={setNodeRef}
+      onClick={() => { if (filledWord && onClear) onClear() }}
+      title={filledWord ? 'Bấm vào để gỡ từ này ra' : undefined}
       style={{ 
         display: 'inline-block', 
         verticalAlign: 'middle', 
-        minWidth: '140px', 
-        minHeight: '40px', 
+        minWidth: '150px', 
+        minHeight: '42px', 
         touchAction: 'none',
         textAlign: 'center'
       }}
       className={`my-1 mx-1.5 px-3 py-1.5 border-2 border-dashed rounded-xl text-sm font-bold transition-all align-middle ${
-        isOver ? 'bg-purple-200 border-purple-500 scale-105 shadow-md' : filledWord ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-slate-50 border-slate-300 text-slate-400'
+        isOver
+          ? 'bg-purple-200 border-purple-500 scale-105 shadow-md'
+          : filledWord
+            ? 'bg-purple-600 text-white border-purple-600 shadow-sm cursor-pointer hover:bg-purple-700'
+            : 'bg-slate-50 border-slate-300 text-slate-400'
       }`}
     >
       {filledWord || '🎯 Thả từ vào đây'}
@@ -118,7 +130,7 @@ function ExamContent() {
         let isAllCorrect = true
         if (q.correct_answer && q.dropzones) {
           q.dropzones.forEach((dz: string) => {
-            if (answers[dz] !== q.correct_answer[dz]) isAllCorrect = false
+            if (answers[`${q.id}_${dz}`] !== q.correct_answer[dz]) isAllCorrect = false
           })
         } else {
           isAllCorrect = false
@@ -276,7 +288,17 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
       </header>
 
       <main className="p-4 md:p-6 max-w-2xl mx-auto space-y-6 mt-2">
-        <DndContext sensors={sensors} onDragEnd={(e) => { if (e.over) setAnswers(prev => ({ ...prev, [e.over!.id]: e.active.id })) }}>
+        <DndContext
+          sensors={sensors}
+          onDragEnd={(e) => {
+            if (!e.over || !e.active) return
+            const activeData = e.active.data.current
+            const overData = e.over.data.current
+            if (activeData && overData && activeData.questionId === overData.questionId) {
+              setAnswers(prev => ({ ...prev, [String(e.over!.id)]: activeData.word }))
+            }
+          }}
+        >
           
           {questions.filter(q => q.type === 'single').length > 0 && (
             <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
@@ -338,32 +360,46 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
                 <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-purple-600 mr-2"></span> Phần III. Kéo thả từ khóa</span>
                 <span className="px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold">Chạm & Giữ</span>
               </h2>
-              {questions.filter(q => q.type === 'drag_drop').map(q => {
+              {questions.filter(q => q.type === 'drag_drop').map((q) => {
                 const rawContent = q.content || ''
                 const lines = rawContent.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0)
+                const usedWords = (q.dropzones || []).map((dz: string) => answers[`${q.id}_${dz}`]).filter(Boolean)
 
                 return (
-                  <div key={q.id} className="mb-8 last:mb-0 border-b border-purple-50 pb-6 last:border-none">
+                  <div key={q.id} className="mb-8 last:mb-0 border-b border-purple-100 pb-6 last:border-none">
                     <div className="text-[15px] font-medium text-slate-800 bg-purple-50/40 p-5 rounded-2xl border border-purple-100 mb-5 space-y-3">
                       {q.dropzones && q.dropzones.map((dz: string, idx: number) => {
                         let lineText = lines[idx] ? lines[idx].replace(/_____|\[drop_\d+\]/g, '').trim() : `Ý ${idx + 1}`
                         lineText = lineText.replace(/^[0-9]+\.\s*/, '')
+                        const dropKey = `${q.id}_${dz}`
 
                         return (
-                          <div key={dz} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/80 p-3.5 rounded-xl border border-purple-100 shadow-sm">
+                          <div key={dropKey} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/80 p-3.5 rounded-xl border border-purple-100 shadow-sm">
                             <span className="font-bold text-slate-700 flex-1">{idx + 1}. {lineText}</span>
-                            <DroppableZone id={dz} filledWord={answers[dz]} />
+                            <DroppableZone
+                              id={dropKey}
+                              dz={dz}
+                              questionId={q.id}
+                              filledWord={answers[dropKey]}
+                              onClear={() => {
+                                setAnswers(prev => {
+                                  const updated = { ...prev }
+                                  delete updated[dropKey]
+                                  return updated
+                                })
+                              }}
+                            />
                           </div>
                         )
                       })}
                     </div>
 
                     <div className="bg-purple-50/80 p-4 rounded-2xl border border-purple-100">
-                      <p className="text-xs font-bold text-purple-400 uppercase mb-3 tracking-wider">🌟 Kéo các từ bên dưới điền vào chỗ trống:</p>
+                      <p className="text-xs font-bold text-purple-500 uppercase mb-3 tracking-wider">🌟 Kéo các từ bên dưới điền vào chỗ trống (bấm vào ô đã điền nếu muốn gỡ từ):</p>
                       <div className="flex flex-wrap gap-2.5">
-                        {q.options.map((word: string) => {
-                          if (Object.values(answers).includes(word)) return null
-                          return <DraggableWord key={word} id={word} text={word} />
+                        {q.options.map((word: string, wIdx: number) => {
+                          if (usedWords.includes(word)) return null
+                          return <DraggableWord key={`${q.id}_word_${wIdx}`} id={`${q.id}_word_${wIdx}`} text={word} questionId={q.id} />
                         })}
                       </div>
                     </div>
@@ -471,14 +507,14 @@ if (step === 'confirm') return (
                   {q.type === 'drag_drop' && (
                     <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-100 text-xs space-y-2">
                       <p className="font-bold text-purple-800">Kết quả kéo thả từ khóa:</p>
-                      {q.dropzones && q.dropzones.map((dz: string) => {
-                        const studentWord = answers[dz] || '(Trống)'
+                      {q.dropzones && q.dropzones.map((dz: string, idx: number) => {
+                        const studentWord = answers[`${q.id}_${dz}`] || '(Trống)'
                         const correctWord = q.correct_answer?.[dz]
                         const isRight = studentWord === correctWord
 
                         return (
-                          <div key={dz} className={`p-2.5 rounded-xl border flex justify-between items-center bg-white ${isRight ? 'border-emerald-300 text-emerald-800' : 'border-rose-300 text-rose-800'}`}>
-                            <span>Ô trống <strong>[{dz}]</strong>: Em điền <strong>{studentWord}</strong></span>
+                          <div key={`${q.id}_${dz}`} className={`p-2.5 rounded-xl border flex justify-between items-center bg-white ${isRight ? 'border-emerald-300 text-emerald-800' : 'border-rose-300 text-rose-800'}`}>
+                            <span>Ý {idx + 1} <strong>[{dz}]</strong>: Em điền <strong>{studentWord}</strong></span>
                             <span>Đáp án chuẩn: <strong>{correctWord}</strong> {isRight ? '✅' : '❌'}</span>
                           </div>
                         )
