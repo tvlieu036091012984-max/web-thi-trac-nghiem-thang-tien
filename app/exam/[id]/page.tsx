@@ -6,7 +6,7 @@ import { Clock, CheckCircle2, AlertTriangle, Send, Loader2, User, Sparkles, Book
 import { DndContext, useDraggable, useDroppable, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { createClient } from '@/utils/supabase/client'
 
-// --- COMPONENT HỖ TRỢ KÉO THẢ ---
+// --- COMPONENT HỖ TRỢ KÉO THẢ (ĐÃ TỐI ƯU VÙNG NHẬN THẢ) ---
 const DraggableWord = ({ id, text }: { id: string, text: string }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
@@ -23,9 +23,20 @@ const DraggableWord = ({ id, text }: { id: string, text: string }) => {
 const DroppableZone = ({ id, filledWord }: { id: string, filledWord?: string }) => {
   const { isOver, setNodeRef } = useDroppable({ id })
   return (
-    <span ref={setNodeRef} className={`inline-flex items-center justify-center min-w-[130px] h-10 mx-2 px-3 border-2 border-dashed rounded-xl text-sm font-bold transition-colors ${
-        isOver ? 'bg-purple-100 border-purple-400' : filledWord ? 'bg-purple-500 text-white border-purple-500 shadow-sm' : 'bg-slate-50 border-slate-300 text-slate-400'
-      }`}>
+    <span 
+      ref={setNodeRef} 
+      style={{ 
+        display: 'inline-block', 
+        verticalAlign: 'middle', 
+        minWidth: '140px', 
+        minHeight: '40px', 
+        touchAction: 'none',
+        textAlign: 'center'
+      }}
+      className={`my-1 mx-1.5 px-3 py-1.5 border-2 border-dashed rounded-xl text-sm font-bold transition-all align-middle ${
+        isOver ? 'bg-purple-200 border-purple-500 scale-105 shadow-md' : filledWord ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-slate-50 border-slate-300 text-slate-400'
+      }`}
+    >
       {filledWord || '🎯 Thả từ vào đây'}
     </span>
   )
@@ -42,7 +53,7 @@ function ExamContent() {
   
   const [step, setStep] = useState<'start' | 'testing' | 'confirm' | 'result'>('start')
   const [studentName, setStudentName] = useState('')
-  const [inputPassword, setInputPassword] = useState('') // <-- Thêm state mật khẩu học sinh nhập
+  const [inputPassword, setInputPassword] = useState('')
   const [timeLeft, setTimeLeft] = useState(0)
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [score, setScore] = useState(0)
@@ -129,7 +140,6 @@ function ExamContent() {
       })
 
       if (submitError) throw submitError
-
       setStep('result')
     } catch (err: any) {
       console.error("Lỗi khi nộp bài:", err)
@@ -211,7 +221,6 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
               </div>
             </div>
 
-            {/* Ô NHẬP MẬT KHẨU ĐỀ THI (NẾU ĐỀ CÓ CÀI MẬT KHẨU) */}
             {examData?.exam_password && (
               <div>
                 <label className="block text-sm font-bold text-orange-900 mb-2 flex items-center">
@@ -236,7 +245,6 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
           <button 
             onClick={() => { 
               if(!studentName.trim()) { alert("Em vui lòng nhập tên trước khi thi nhé!"); return; }
-              // Kiểm tra mật khẩu nếu đề có cài
               if (examData?.exam_password && inputPassword.trim() !== examData.exam_password.trim()) {
                 alert("❌ Mật khẩu đề thi không chính xác! Vui lòng kiểm tra lại.");
                 return;
@@ -251,7 +259,8 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
       </div>
     )
   }
-if (step === 'testing') return (
+
+  if (step === 'testing') return (
     <div className="min-h-screen bg-slate-50 font-sans pb-24">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200 px-6 py-3.5 shadow-sm flex items-center justify-between">
         <div className="flex items-center space-x-3">
@@ -366,8 +375,7 @@ if (step === 'testing') return (
       </main>
     </div>
   )
-
-  if (step === 'confirm') return (
+if (step === 'confirm') return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white p-8 rounded-3xl text-center w-full max-w-sm shadow-2xl border border-slate-100">
         <AlertTriangle size={56} className="text-orange-500 mx-auto mb-4 animate-bounce" />
