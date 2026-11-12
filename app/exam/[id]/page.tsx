@@ -340,21 +340,18 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
               </h2>
               {questions.filter(q => q.type === 'drag_drop').map(q => {
                 const rawContent = q.content || ''
-                const parts = rawContent.split(/(\[drop_\d+\])/g).filter(Boolean)
+                const lines = rawContent.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0)
 
                 return (
                   <div key={q.id} className="mb-8 last:mb-0 border-b border-purple-50 pb-6 last:border-none">
                     <div className="text-[15px] font-medium text-slate-800 bg-purple-50/40 p-5 rounded-2xl border border-purple-100 mb-5 space-y-3">
                       {q.dropzones && q.dropzones.map((dz: string, idx: number) => {
-                        let segmentText = `Ý ${idx + 1}`
-                        const dzIndex = parts.findIndex((p: string) => p.includes(dz))
-                        if (dzIndex > 0) {
-                          segmentText = parts[dzIndex - 1].replace(/^[0-9]+\.\s*|^Câu\s+[0-9]+\:?\s*/i, '').trim()
-                        }
+                        let lineText = lines[idx] ? lines[idx].replace(/_____|\[drop_\d+\]/g, '').trim() : `Ý ${idx + 1}`
+                        lineText = lineText.replace(/^[0-9]+\.\s*/, '')
 
                         return (
                           <div key={dz} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/80 p-3.5 rounded-xl border border-purple-100 shadow-sm">
-                            <span className="font-bold text-slate-700 flex-1">{idx + 1}. {segmentText}</span>
+                            <span className="font-bold text-slate-700 flex-1">{idx + 1}. {lineText}</span>
                             <DroppableZone id={dz} filledWord={answers[dz]} />
                           </div>
                         )
