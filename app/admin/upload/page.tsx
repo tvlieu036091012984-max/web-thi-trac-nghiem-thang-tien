@@ -18,10 +18,9 @@ export default function UploadExam() {
   const [openTime, setOpenTime] = useState('')
   const [closeTime, setCloseTime] = useState('')
   const [timeLimit, setTimeLimit] = useState(40)
-  const [examPassword, setExamPassword] = useState('') // Bổ sung state mật khẩu đề thi
+  const [examPassword, setExamPassword] = useState('')
   const router = useRouter()
 
-  // Kiểm tra đăng nhập khi vào trang Upload
   useEffect(() => {
     const role = localStorage.getItem('user_role')
     if (!role) {
@@ -55,11 +54,17 @@ export default function UploadExam() {
       img.onerror = () => resolve(`data:${contentType};base64,${base64Str}`)
     })
   }
-
-  const parseWordHtml = (html: string) => {
-    const lines = html.split('</p>').map(line => {
-      return line.replace(/<\/?(?!(img)\b)[^>]+>/gi, '').trim()
-    }).filter(line => line.length > 0)
+const parseWordHtml = (html: string) => {
+    const lines = html
+      .split(/<\/p>|<br\s*\/?>/i)
+      .map(line => {
+        return line
+          .replace(/<\/?(?!(img)\b)[^>]+>/gi, '')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/\u00A0/g, ' ')
+          .trim()
+      })
+      .filter(line => line.length > 0)
 
     let currentPart = 1
     let questions: any[] = []
@@ -86,41 +91,64 @@ export default function UploadExam() {
         }
         
         if (currentPart === 3) {
-          const dropzoneMatches = [...line.matchAll(/\[(.*?)\]/g)]
-          currentQ.dropzones = dropzoneMatches.map(m => m[1]) 
-          currentQ.content = line.replace(/\[.*?\]/g, '_____') 
+          const dropzoneMatches = [...textOnly.matchAll(/\[(.*?)\]/g)]
+          if (dropzoneMatches.length > 0) {
+            currentQ.dropzones.push(...dropzoneMatches.map(m => m[1].trim()))
+          }
+          currentQ.content = textOnly.replace(/^Câu\s+\d+[:.]\s*/i, '').trim()
         }
         return;
       }
 
       if (currentQ) {
+        if (currentPart === 3) {
+          if (textUpper.startsWith('ĐÁP ÁN:') || textUpper.startsWith('*ĐÁP ÁN:') || textUpper.startsWith('ĐÁP ÁN :')) {
+            const ansPart = textOnly.replace(/^\*?đáp\s*án\s*[:]\s*/i, '').trim()
+            const words = ansPart.split(',').map(s => s.trim()).filter(Boolean)
+            const ansObj: Record<string, string> = {}
+            currentQ.dropzones.forEach((dz: string, idx: number) => {
+              if (words[idx] !== undefined) {
+                ansObj[dz] = words[idx]
+              }
+            })
+            currentQ.correct_answer = ansObj
+            return
+          }
+
+          if (/\[(.*?)\]/.test(textOnly)) {
+            const dropzoneMatches = [...textOnly.matchAll(/\[(.*?)\]/g)]
+            dropzoneMatches.forEach(m => {
+              const dzName = m[1].trim()
+              if (dzName && !currentQ.dropzones.includes(dzName)) {
+                currentQ.dropzones.push(dzName)
+              }
+            })
+            currentQ.content = currentQ.content ? `${currentQ.content}\n${textOnly}` : textOnly
+            return
+          }
+
+          if (currentQ.options.length === 0 && textOnly.includes('-')) {
+            currentQ.options = textOnly.split('-').map((w: string) => w.trim()).filter((w: string) => w.length > 0)
+            return
+          }
+
+          currentQ.content = currentQ.content ? `${currentQ.content}\n${textOnly}` : textOnly
+          return
+        }
+
         const isAnswer = textUpper.match(/^(\*?[A-D]|\*?[a-d])[.)]/)
         if (isAnswer) {
           const isCorrect = textUpper.startsWith('*')
           let cleanLine = line.replace(/^\*?[A-Da-d][.)]\s*/i, '').trim()
           
-          if(currentPart === 1) {
-             currentQ.options.push(cleanLine)
-             if (isCorrect) currentQ.correct_answer = currentQ.options.length - 1
+          if (currentPart === 1) {
+            currentQ.options.push(cleanLine)
+            if (isCorrect) currentQ.correct_answer = currentQ.options.length - 1
           } else if (currentPart === 2) {
-             currentQ.options.push({ text: cleanLine, correct: isCorrect })
+            currentQ.options.push({ text: cleanLine, correct: isCorrect })
           }
-        } else if (currentPart === 3 && (textUpper.startsWith('ĐÁP ÁN:') || textUpper.startsWith('*ĐÁP ÁN:') || textUpper.startsWith('ĐÁP ÁN :'))) {
-           const ansPart = line.replace(/^\*?đáp\s*án\s*[:]\s*/i, '').trim()
-           const words = ansPart.split(',').map(s => s.trim())
-           const ansObj: Record<string, string> = {}
-           currentQ.dropzones.forEach((dz: string, idx: number) => {
-             if (words[idx]) {
-               ansObj[dz] = words[idx]
-             }
-           })
-           currentQ.correct_answer = ansObj
-        } else if (currentPart === 3 && currentQ.options.length === 0 && textOnly.includes('-')) {
-           currentQ.options = textOnly.split('-').map((w: string) => w.trim()).filter((w: string) => w)
         } else {
-          if (currentPart !== 3 || currentQ.options.length === 0) {
-            currentQ.content += '<br/>' + line
-          }
+          currentQ.content += '<br/>' + line
         }
       }
     })
@@ -128,7 +156,8 @@ export default function UploadExam() {
     if (currentQ) questions.push(currentQ)
     return questions
   }
-const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setLoading(true); setError(''); setSaveSuccess('')
@@ -179,7 +208,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
             shuffle: false, 
             showScoreAfter: true 
           },
-          exam_password: examPassword ? examPassword.trim() : null, // Lưu mật khẩu vào DB
+          exam_password: examPassword ? examPassword.trim() : null,
           created_by: currentTeacher 
         }])
         .select()
