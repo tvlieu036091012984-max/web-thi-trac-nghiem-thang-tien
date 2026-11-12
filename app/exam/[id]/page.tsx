@@ -339,16 +339,22 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
                 <span className="px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold">Chạm & Giữ</span>
               </h2>
               {questions.filter(q => q.type === 'drag_drop').map(q => {
-                const lines = q.content.split('\n').filter((l: string) => l.trim() !== '')
+                const rawContent = q.content || ''
+                const parts = rawContent.split(/(\[drop_\d+\])/g).filter(Boolean)
 
                 return (
                   <div key={q.id} className="mb-8 last:mb-0 border-b border-purple-50 pb-6 last:border-none">
                     <div className="text-[15px] font-medium text-slate-800 bg-purple-50/40 p-5 rounded-2xl border border-purple-100 mb-5 space-y-3">
                       {q.dropzones && q.dropzones.map((dz: string, idx: number) => {
-                        const lineText = lines[idx] ? lines[idx].replace(/_____|\[.*?\]/g, '').trim() : `Ý ${idx + 1}`
+                        let segmentText = `Ý ${idx + 1}`
+                        const dzIndex = parts.findIndex((p: string) => p.includes(dz))
+                        if (dzIndex > 0) {
+                          segmentText = parts[dzIndex - 1].replace(/^[0-9]+\.\s*|^Câu\s+[0-9]+\:?\s*/i, '').trim()
+                        }
+
                         return (
-                          <div key={dz} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white/80 p-3 rounded-xl border border-purple-100 shadow-sm">
-                            <span className="font-semibold text-slate-700">{idx + 1}. {lineText}</span>
+                          <div key={dz} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/80 p-3.5 rounded-xl border border-purple-100 shadow-sm">
+                            <span className="font-bold text-slate-700 flex-1">{idx + 1}. {segmentText}</span>
                             <DroppableZone id={dz} filledWord={answers[dz]} />
                           </div>
                         )
