@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useParams } from 'next/navigation'
-import { Clock, CheckCircle2, AlertTriangle, Send, Loader2, User, Sparkles, BookOpen, Award } from 'lucide-react'
+import { Clock, CheckCircle2, AlertTriangle, Send, Loader2, User, Sparkles, BookOpen, Award, Lock } from 'lucide-react'
 import { DndContext, useDraggable, useDroppable, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { createClient } from '@/utils/supabase/client'
 
@@ -42,6 +42,7 @@ function ExamContent() {
   
   const [step, setStep] = useState<'start' | 'testing' | 'confirm' | 'result'>('start')
   const [studentName, setStudentName] = useState('')
+  const [inputPassword, setInputPassword] = useState('') // <-- Thêm state mật khẩu học sinh nhập
   const [timeLeft, setTimeLeft] = useState(0)
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [score, setScore] = useState(0)
@@ -134,7 +135,7 @@ function ExamContent() {
       console.error("Lỗi khi nộp bài:", err)
       alert("Lỗi lưu điểm: " + (err.message || "Không thể kết nối cơ sở dữ liệu!"))
     } finally {
-      setIsSubmitting(false) // Đảm bảo luôn tắt vòng xoay loading ở mọi tình huống
+      setIsSubmitting(false)
     }
   }
 
@@ -195,18 +196,36 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
             <Sparkles className="w-4 h-4 mr-1 text-orange-500" /> LỚP HỌC THĂNG TIẾN • Thầy Trần Văn Liệu
           </p>
           
-          <div className="bg-blue-50/70 border border-blue-100 p-6 rounded-2xl mb-6">
-            <label className="block text-sm font-bold text-blue-900 mb-2">Họ và tên học sinh của thầy:</label>
-            <div className="relative">
-              <User className="absolute left-3.5 top-3.5 text-blue-400 w-5 h-5" />
-              <input 
-                type="text" 
-                placeholder="Nhập tên đầy đủ của em..."
-                value={studentName}
-                onChange={(e) => setStudentName(e.target.value)}
-                className="w-full pl-11 p-3.5 rounded-xl border-2 border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none font-semibold text-slate-800 bg-white"
-              />
+          <div className="bg-blue-50/70 border border-blue-100 p-6 rounded-2xl mb-6 space-y-4">
+            <div>
+              <label className="block text-sm font-bold text-blue-900 mb-2">Họ và tên học sinh của thầy:</label>
+              <div className="relative">
+                <User className="absolute left-3.5 top-3.5 text-blue-400 w-5 h-5" />
+                <input 
+                  type="text" 
+                  placeholder="Nhập tên đầy đủ của em..."
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                  className="w-full pl-11 p-3.5 rounded-xl border-2 border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none font-semibold text-slate-800 bg-white"
+                />
+              </div>
             </div>
+
+            {/* Ô NHẬP MẬT KHẨU ĐỀ THI (NẾU ĐỀ CÓ CÀI MẬT KHẨU) */}
+            {examData?.exam_password && (
+              <div>
+                <label className="block text-sm font-bold text-orange-900 mb-2 flex items-center">
+                  <Lock className="w-4 h-4 mr-1 text-orange-600" /> Mật khẩu bảo vệ đề thi:
+                </label>
+                <input 
+                  type="password" 
+                  placeholder="Nhập mật khẩu do Thầy cô cung cấp..."
+                  value={inputPassword}
+                  onChange={(e) => setInputPassword(e.target.value)}
+                  className="w-full p-3.5 rounded-xl border-2 border-orange-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-100 outline-none font-bold text-slate-800 bg-white text-center tracking-widest text-base"
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between text-sm text-slate-600 border-t border-slate-100 pt-4 mb-8 px-2 font-medium">
@@ -215,7 +234,15 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
           </div>
           
           <button 
-            onClick={() => { if(!studentName.trim()) { alert("Em vui lòng nhập tên trước khi thi nhé!"); return; }; setStep('testing') }} 
+            onClick={() => { 
+              if(!studentName.trim()) { alert("Em vui lòng nhập tên trước khi thi nhé!"); return; }
+              // Kiểm tra mật khẩu nếu đề có cài
+              if (examData?.exam_password && inputPassword.trim() !== examData.exam_password.trim()) {
+                alert("❌ Mật khẩu đề thi không chính xác! Vui lòng kiểm tra lại.");
+                return;
+              }
+              setStep('testing'); 
+            }} 
             className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold py-4 rounded-2xl transition shadow-lg shadow-orange-200 active:scale-95 text-base"
           >
             🚀 Bắt đầu làm bài ngay
@@ -224,8 +251,7 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
       </div>
     )
   }
-
-  if (step === 'testing') return (
+if (step === 'testing') return (
     <div className="min-h-screen bg-slate-50 font-sans pb-24">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200 px-6 py-3.5 shadow-sm flex items-center justify-between">
         <div className="flex items-center space-x-3">
@@ -386,7 +412,6 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
 
                   <div className="text-[15px] font-bold text-slate-800 mb-4 leading-relaxed" dangerouslySetInnerHTML={{ __html: q.content }} />
 
-                  {/* REVIEW TRẮC NGHIỆM */}
                   {q.type === 'single' && (
                     <div className="space-y-2.5">
                       {q.options.map((opt: string, idx: number) => {
@@ -414,7 +439,6 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
                     </div>
                   )}
 
-                  {/* REVIEW ĐÚNG / SAI */}
                   {q.type === 'true_false' && (
                     <div className="space-y-3">
                       {q.options.map((opt: any, idx: number) => {
@@ -435,7 +459,6 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
                     </div>
                   )}
 
-                  {/* REVIEW KÉO THẢ */}
                   {q.type === 'drag_drop' && (
                     <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-100 text-xs space-y-2">
                       <p className="font-bold text-purple-800">Kết quả kéo thả từ khóa:</p>
@@ -483,7 +506,6 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
             {isPassed ? '✨ Kết quả của em đã được gửi về cho Thầy Trần Văn Liệu!' : '⚠️ Điểm dưới 5.0 bắt buộc phải làm lại để nắm vững kiến thức!'}
           </div>
 
-          {/* NẾU ĐẠT TỪ 5 ĐIỂM TRỞ LÊN: HIỆN NÚT XEM LẠI ĐÁP ÁN */}
           {isPassed ? (
             <button 
               onClick={() => setIsReviewing(true)}
@@ -492,7 +514,6 @@ if (loading) return <div className="min-h-screen flex items-center justify-cente
               🔍 Xem lại chi tiết đáp án
             </button>
           ) : (
-            /* NẾU DƯỚI 5 ĐIỂM: HIỆN NÚT LÀM LẠI BÀI */
             <button 
               onClick={() => { setAnswers({}); setStep('testing'); setTimeLeft(examData?.config.timeLimit * 60 || 2400); }}
               className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-rose-200 mb-3 flex items-center justify-center active:scale-95"

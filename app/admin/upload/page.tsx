@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import * as mammoth from 'mammoth'
-import { Upload, CheckCircle2, AlertCircle, Save, Loader2, Sparkles, FileText, Clock, Home, LayoutDashboard } from 'lucide-react'
+import { Upload, CheckCircle2, AlertCircle, Save, Loader2, Sparkles, FileText, Clock, Home, LayoutDashboard, Lock } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 
@@ -18,6 +18,7 @@ export default function UploadExam() {
   const [openTime, setOpenTime] = useState('')
   const [closeTime, setCloseTime] = useState('')
   const [timeLimit, setTimeLimit] = useState(40)
+  const [examPassword, setExamPassword] = useState('') // Bổ sung state mật khẩu đề thi
   const router = useRouter()
 
   // Kiểm tra đăng nhập khi vào trang Upload
@@ -127,8 +128,7 @@ export default function UploadExam() {
     if (currentQ) questions.push(currentQ)
     return questions
   }
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setLoading(true); setError(''); setSaveSuccess('')
@@ -159,7 +159,8 @@ export default function UploadExam() {
       setError('Lỗi khi đọc file. Yêu cầu định dạng .docx'); setLoading(false)
     }
   }
-const handleSaveToDatabase = async () => {
+
+  const handleSaveToDatabase = async () => {
     if (parsedData.length === 0) return
     setIsSaving(true); setError(''); setSaveSuccess('')
     
@@ -178,7 +179,8 @@ const handleSaveToDatabase = async () => {
             shuffle: false, 
             showScoreAfter: true 
           },
-          created_by: currentTeacher // Ghi nhận giáo viên tạo đề
+          exam_password: examPassword ? examPassword.trim() : null, // Lưu mật khẩu vào DB
+          created_by: currentTeacher 
         }])
         .select()
         .single()
@@ -209,8 +211,7 @@ const handleSaveToDatabase = async () => {
       setIsSaving(false)
     }
   }
-
-  return (
+return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-orange-50 p-6 md:p-10 font-sans flex flex-col justify-between">
       <div className="max-w-4xl mx-auto w-full bg-white/90 backdrop-blur-md p-8 md:p-10 rounded-3xl shadow-xl border border-white">
         
@@ -257,8 +258,8 @@ const handleSaveToDatabase = async () => {
           />
         </div>
 
-        {/* CÀI ĐẶT THỜI GIAN & KHUNG GIỜ MỞ/ĐÓNG ĐỀ */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-blue-50/50 p-5 rounded-2xl border border-blue-100">
+        {/* CÀI ĐẶT THỜI GIAN, KHUNG GIỜ MỞ/ĐÓNG & MẬT KHẨU */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-blue-50/50 p-5 rounded-2xl border border-blue-100">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center">
               <Clock className="w-3.5 h-3.5 mr-1.5 text-blue-600" /> Thời gian làm bài (phút)
@@ -271,7 +272,7 @@ const handleSaveToDatabase = async () => {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">⏳ Thời điểm Mở Đề (Tùy chọn)</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">⏳ Thời điểm Mở Đề</label>
             <input 
               type="datetime-local" 
               value={openTime}
@@ -280,12 +281,24 @@ const handleSaveToDatabase = async () => {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">🔒 Thời điểm Đóng Đề (Tùy chọn)</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">🔒 Thời điểm Đóng Đề</label>
             <input 
               type="datetime-local" 
               value={closeTime}
               onChange={(e) => setCloseTime(e.target.value)}
               className="w-full p-3 border border-slate-200 rounded-xl bg-white font-medium text-slate-800 text-xs outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center">
+              <Lock className="w-3.5 h-3.5 mr-1.5 text-orange-600" /> Mật khẩu bảo vệ
+            </label>
+            <input 
+              type="text" 
+              placeholder="Để trống nếu không cần"
+              value={examPassword}
+              onChange={(e) => setExamPassword(e.target.value)}
+              className="w-full p-3 border border-slate-200 rounded-xl bg-white font-medium text-slate-800 text-xs outline-none focus:border-orange-500"
             />
           </div>
         </div>
