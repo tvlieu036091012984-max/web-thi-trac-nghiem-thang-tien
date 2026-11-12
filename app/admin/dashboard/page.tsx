@@ -32,31 +32,32 @@ export default function AdminDashboard() {
     fetchData()
   }, [router])
 
-  // Hàm fetchData được viết lại hoàn toàn để đảm bảo lấy được dữ liệu submissions
   const fetchData = async () => {
     try {
       const supabase = createClient()
       
-      // Lấy danh sách đề thi (độc lập)
+      // 1. Lấy danh sách đề thi
       const { data: examData } = await supabase.from('exams').select('*').order('created_at', { ascending: false })
       if (examData) {
         setExams(examData)
       }
 
-      // Lấy danh sách submissions (độc lập tuyệt đối)
-      const { data: subData, error: subError } = await supabase.from('submissions').select('*').order('created_at', { ascending: false })
+      // 2. Lấy dữ liệu submissions NHƯNG KHÔNG SẮP XẾP THEO created_at ĐỂ TRÁNH LỖI THIẾU CỘT
+      const { data: subData, error: subError } = await supabase.from('submissions').select('*')
       
       if (subError) {
-        console.error("Lỗi tải submissions từ Supabase:", subError)
+        // Nếu có lỗi ngầm từ cơ sở dữ liệu, nó sẽ hiện popup thông báo ngay cho thầy!
+        alert("Lỗi tải điểm từ hệ thống: " + subError.message)
+        console.error("Lỗi tải submissions:", subError)
       }
 
       if (subData) {
-        // Gán trực tiếp subData, phần tên đề thi sẽ được xử lý khi render để tránh lỗi map
-        setSubmissions(subData)
+        // Đảo ngược mảng bằng JavaScript để người nộp sau cùng hiện lên đầu
+        setSubmissions(subData.reverse())
       }
 
       setLoading(false)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Lỗi tải dữ liệu tổng quát:", err)
       setLoading(false)
     }
@@ -95,13 +96,12 @@ const handleDeleteExam = async (examId: string) => {
     
     submissions.forEach((sub, index) => {
       const studentName = `"${sub.student_name || ''}"`
-      
-      // Tìm tên đề thi trực tiếp trong danh sách exams hiện có
       const matchedExam = exams.find(e => e.id === sub.exam_id)
       const examTitle = `"${matchedExam?.title || 'Đề kiểm tra KHTN'}"`
-      
       const score = sub.score !== undefined ? sub.score : 0
-      const time = `"${new Date(sub.created_at).toLocaleString('vi-VN')}"`
+      
+      // An toàn: Nếu không có cột created_at, sẽ in ra "---" thay vì báo lỗi
+      const time = sub.created_at ? `"${new Date(sub.created_at).toLocaleString('vi-VN')}"` : '"---"'
       
       csvContent += `${index + 1},${studentName},${examTitle},${score},${time}\n`
     })
@@ -267,7 +267,7 @@ if (loading) return (
                     </div>
                     <h3 className="text-lg font-black text-slate-800 mb-2">{exam.title}</h3>
                     <p className="text-xs text-slate-400 flex items-center mb-6 font-medium">
-                      <Calendar className="w-3.5 h-3.5 mr-1 text-indigo-400" /> Ngày tạo: {new Date(exam.created_at).toLocaleDateString('vi-VN')} {exam.created_by && `• Tạo bởi: ${exam.created_by}`}
+                      <Calendar className="w-3.5 h-3.5 mr-1 text-indigo-400" /> Ngày tạo: {exam.created_at ? new Date(exam.created_at).toLocaleDateString('vi-VN') : '---'} {exam.created_by && `• Tạo bởi: ${exam.created_by}`}
                     </p>
                   </div>
 
@@ -319,7 +319,6 @@ if (loading) return (
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {submissions.map((sub) => {
-                    // Hiển thị tên đề trực tiếp khi render
                     const matchedExam = exams.find(e => e.id === sub.exam_id)
                     const displayTitle = matchedExam?.title || 'Đề kiểm tra KHTN'
 
@@ -335,7 +334,8 @@ if (loading) return (
                           </span>
                         </td>
                         <td className="p-4 pr-6 text-slate-400 text-xs font-medium">
-                          {new Date(sub.created_at).toLocaleString('vi-VN')}
+                          {/* Xử lý an toàn nếu bảng không có cột thời gian */}
+                          {sub.created_at ? new Date(sub.created_at).toLocaleString('vi-VN') : '---'}
                         </td>
                       </tr>
                     )
