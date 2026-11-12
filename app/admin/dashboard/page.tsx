@@ -35,12 +35,17 @@ export default function AdminDashboard() {
     try {
       const supabase = createClient()
       
+      // 1. Lấy danh sách đề thi
       const { data: examData } = await supabase.from('exams').select('*').order('created_at', { ascending: false })
       if (examData) setExams(examData)
 
-      // Lấy trực tiếp toàn bộ submissions từ Supabase không qua lọc khắt khe
-      const { data: subData } = await supabase.from('submissions').select('*').order('created_at', { ascending: false })
+      // 2. Lấy trực tiếp 100% danh sách học sinh nộp bài từ bảng submissions (độc lập tuyệt đối)
+      const { data: subData, error: subError } = await supabase.from('submissions').select('*').order('created_at', { ascending: false })
       
+      if (subError) {
+        console.error("Lỗi tải submissions:", subError.message)
+      }
+
       if (subData) {
         const formattedSubs = subData.map(sub => {
           const matchedExam = examData?.find(e => e.id === sub.exam_id)
