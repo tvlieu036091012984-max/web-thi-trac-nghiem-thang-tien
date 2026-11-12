@@ -15,7 +15,6 @@ export default function AdminDashboard() {
   const [copiedId, setCopiedId] = useState<string | null>('')
   const [activeTab, setActiveTab] = useState<'exams' | 'submissions'>('exams')
   
-  // --- STATE PHÂN QUYỀN ---
   const [userRole, setUserRole] = useState<string>('')
   const [teacherUsername, setTeacherUsername] = useState<string>('')
   const router = useRouter()
@@ -33,35 +32,32 @@ export default function AdminDashboard() {
     fetchData()
   }, [router])
 
+  // Hàm fetchData được viết lại hoàn toàn để đảm bảo lấy được dữ liệu submissions
   const fetchData = async () => {
     try {
       const supabase = createClient()
       
-      // 1. Lấy danh sách đề thi
+      // Lấy danh sách đề thi (độc lập)
       const { data: examData } = await supabase.from('exams').select('*').order('created_at', { ascending: false })
-      if (examData) setExams(examData)
+      if (examData) {
+        setExams(examData)
+      }
 
-      // 2. Lấy trực tiếp 100% danh sách học sinh nộp bài từ bảng submissions (độc lập tuyệt đối)
+      // Lấy danh sách submissions (độc lập tuyệt đối)
       const { data: subData, error: subError } = await supabase.from('submissions').select('*').order('created_at', { ascending: false })
       
       if (subError) {
-        console.error("Lỗi tải submissions:", subError.message)
+        console.error("Lỗi tải submissions từ Supabase:", subError)
       }
 
       if (subData) {
-        const formattedSubs = subData.map(sub => {
-          const matchedExam = examData?.find(e => e.id === sub.exam_id)
-          return {
-            ...sub,
-            exams: { title: matchedExam?.title || 'Đề kiểm tra KHTN' }
-          }
-        })
-        setSubmissions(formattedSubs)
+        // Gán trực tiếp subData, phần tên đề thi sẽ được xử lý khi render để tránh lỗi map
+        setSubmissions(subData)
       }
 
       setLoading(false)
     } catch (err) {
-      console.error("Lỗi tải dữ liệu:", err)
+      console.error("Lỗi tải dữ liệu tổng quát:", err)
       setLoading(false)
     }
   }
@@ -99,7 +95,11 @@ const handleDeleteExam = async (examId: string) => {
     
     submissions.forEach((sub, index) => {
       const studentName = `"${sub.student_name || ''}"`
-      const examTitle = `"${sub.exams?.title || 'Đề kiểm tra KHTN'}"`
+      
+      // Tìm tên đề thi trực tiếp trong danh sách exams hiện có
+      const matchedExam = exams.find(e => e.id === sub.exam_id)
+      const examTitle = `"${matchedExam?.title || 'Đề kiểm tra KHTN'}"`
+      
       const score = sub.score !== undefined ? sub.score : 0
       const time = `"${new Date(sub.created_at).toLocaleString('vi-VN')}"`
       
@@ -162,7 +162,7 @@ if (loading) return (
 
       <div className="p-6 md:p-10 max-w-6xl mx-auto w-full relative z-10">
         
-        {/* THANH HEADER TIÊU ĐỀ & PHÂN QUYỀN */}
+        {/* THANH HEADER */}
         <div className="bg-white/85 backdrop-blur-xl p-6 md:p-8 rounded-3xl shadow-xl shadow-indigo-100/50 border border-white/80 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div className="flex items-center space-x-4">
             <div className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-md shadow-blue-200">
@@ -291,7 +291,7 @@ if (loading) return (
           </div>
         )}
 
-        {/* TAB 2: KẾT QUẢ HỌC SINH NỘP BÀI & NÚT XUẤT EXCEL */}
+        {/* TAB 2: KẾT QUẢ HỌC SINH NỘP BÀI */}
         {activeTab === 'submissions' && (
           <div className="bg-white/90 backdrop-blur-md rounded-3xl shadow-xl shadow-indigo-100/40 border border-white overflow-hidden">
             
@@ -318,22 +318,28 @@ if (loading) return (
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {submissions.map((sub) => (
-                    <tr key={sub.id} className="hover:bg-indigo-50/30 transition">
-                      <td className="p-4 pl-6 font-bold text-slate-800 flex items-center">
-                        <Users className="w-4 h-4 mr-2 text-indigo-500" /> {sub.student_name}
-                      </td>
-                      <td className="p-4 text-slate-600 font-medium">{sub.exams?.title || 'Đề kiểm tra KHTN'}</td>
-                      <td className="p-4 text-center">
-                        <span className={`inline-block px-3 py-1 rounded-full font-black text-xs ${sub.score >= 8 ? 'bg-emerald-100 text-emerald-700' : sub.score >= 5 ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'}`}>
-                          {sub.score} / 10
-                        </span>
-                      </td>
-                      <td className="p-4 pr-6 text-slate-400 text-xs font-medium">
-                        {new Date(sub.created_at).toLocaleString('vi-VN')}
-                      </td>
-                    </tr>
-                  ))}
+                  {submissions.map((sub) => {
+                    // Hiển thị tên đề trực tiếp khi render
+                    const matchedExam = exams.find(e => e.id === sub.exam_id)
+                    const displayTitle = matchedExam?.title || 'Đề kiểm tra KHTN'
+
+                    return (
+                      <tr key={sub.id} className="hover:bg-indigo-50/30 transition">
+                        <td className="p-4 pl-6 font-bold text-slate-800 flex items-center">
+                          <Users className="w-4 h-4 mr-2 text-indigo-500" /> {sub.student_name}
+                        </td>
+                        <td className="p-4 text-slate-600 font-medium">{displayTitle}</td>
+                        <td className="p-4 text-center">
+                          <span className={`inline-block px-3 py-1 rounded-full font-black text-xs ${sub.score >= 8 ? 'bg-emerald-100 text-emerald-700' : sub.score >= 5 ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {sub.score} / 10
+                          </span>
+                        </td>
+                        <td className="p-4 pr-6 text-slate-400 text-xs font-medium">
+                          {new Date(sub.created_at).toLocaleString('vi-VN')}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
