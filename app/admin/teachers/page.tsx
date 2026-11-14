@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { UserPlus, Shield, Trash2, ArrowLeft, CheckCircle2, User, Lock, Sparkles } from 'lucide-react'
+import { UserPlus, Shield, Trash2, ArrowLeft, CheckCircle2, User, Lock, Sparkles, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { createClient } from '@/utils/supabase/client'
 
 export default function AdminTeachersPage() {
   const [teachers, setTeachers] = useState<any[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
   const [newUsername, setNewUsername] = useState('')
@@ -15,55 +17,60 @@ export default function AdminTeachersPage() {
   const [newPhone, setNewPhone] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
-  useEffect(() => {
-    const saved = localStorage.getItem('teachers_list')
-    if (saved) {
-      try {
-        setTeachers(JSON.parse(saved))
-      } catch (e) {
-        // Mặc định khởi tạo ít nhất tài khoản ADMIN của thầy nếu dữ liệu hỏng
-        const defaultAdmin = [{ id: 1, name: 'Thầy Trần Văn Liệu', username: 'thaylieu', role: 'ADMIN Tối Cao', phone: '0938274084', status: 'Hoạt động' }]
-        setTeachers(defaultAdmin)
-        localStorage.setItem('teachers_list', JSON.stringify(defaultAdmin))
-      }
+  const supabase = createClient()
+
+  const fetchTeachers = async () => {
+    const { data, error } = await supabase
+      .from('teachers')
+      .select('*')
+      .order('id', { ascending: true })
+
+    if (!error && data) {
+      setTeachers(data)
     } else {
-      // Khởi tạo lần đầu tiên duy nhất tài khoản gốc của thầy
-      const defaultAdmin = [{ id: 1, name: 'Thầy Trần Văn Liệu', username: 'thaylieu', role: 'ADMIN Tối Cao', phone: '0938274084', status: 'Hoạt động' }]
-      setTeachers(defaultAdmin)
-      localStorage.setItem('teachers_list', JSON.stringify(defaultAdmin))
+      console.error('Lỗi tải danh sách giáo viên:', error?.message)
     }
     setIsLoaded(true)
+  }
+
+  useEffect(() => {
+    fetchTeachers()
   }, [])
 
-  const handleAddTeacher = (e: React.FormEvent) => {
+  const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newName || !newUsername || !newPassword) {
+    if (!newName.trim() || !newUsername.trim() || !newPassword.trim()) {
       alert('Vui lòng điền đầy đủ thông tin bắt buộc!')
       return
     }
 
-    const cleanUsername = newUsername.trim().toLowerCase()
+    const cleanUsername = newUsername.trim().replace(/^@/, '').toLowerCase()
 
-    const isExist = teachers.some((t: any) => t.username.toLowerCase() === cleanUsername)
-    if (isExist) {
+    if (cleanUsername === 'admin' || teachers.some((t: any) => t.username.toLowerCase() === cleanUsername)) {
       alert(`⚠️ Tên đăng nhập "@${cleanUsername}" đã tồn tại trong hệ thống. Vui lòng chọn tên khác!`)
       return
     }
 
-    const newAcc = {
-      id: Date.now(),
-      name: newName.trim(),
-      username: cleanUsername,
-      role: newRole,
-      phone: newPhone.trim() || 'Chưa cập nhật',
-      status: 'Hoạt động'
+    setIsSaving(true)
+    const { error } = await supabase.from('teachers').insert([
+      {
+        name: newName.trim(),
+        username: cleanUsername,
+        password: newPassword.trim(),
+        role: newRole,
+        phone: newPhone.trim() || 'Chưa cập nhật',
+        status: 'Hoạt động'
+      }
+    ])
+    setIsSaving(false)
+
+    if (error) {
+      alert('❌ Lỗi lưu tài khoản lên hệ thống: ' + error.message)
+      return
     }
 
-    const updated = [...teachers, newAcc]
-    setTeachers(updated)
-    localStorage.setItem('teachers_list', JSON.stringify(updated))
-
-    setSuccessMsg(`Đã cấp tài khoản thành công cho giáo viên: ${newName}!`)
+    await fetchTeachers()
+    setSuccessMsg(`Đã cấp tài khoản thành công cho: ${newName.trim()} (@${cleanUsername})!`)
     setShowModal(false)
     setNewName('')
     setNewUsername('')
@@ -72,16 +79,19 @@ export default function AdminTeachersPage() {
     setTimeout(() => setSuccessMsg(''), 4000)
   }
 
-  const handleDeleteTeacher = (id: number, name: string, username: string) => {
+  const handleDeleteTeacher = async (id: number, name: string, username: string) => {
     if (username.toLowerCase() === 'thaylieu') {
       alert('⚠️ Không thể xóa tài khoản ADMIN tối cao!')
       return
     }
 
-    if (confirm(`Thầy có chắc chắn muốn xóa vĩnh viễn tài khoản của giáo viên "${name}" không?`)) {
-      const updated = teachers.filter(t => t.id !== id)
-      setTeachers(updated)
-      localStorage.setItem('teachers_list', JSON.stringify(updated))
+    if (confirm(`Thầy có chắc chắn muốn xóa vĩnh viễn tài khoản của "${name}" không?`)) {
+      const { error } = await supabase.from('teachers').delete().eq('id', id)
+      if (error) {
+        alert('❌ Lỗi khi xóa tài khoản: ' + error.message)
+        return
+      }
+      setTeachers((prev) => prev.filter((t) => t.id !== id))
     }
   }
 return (
@@ -208,7 +218,7 @@ return (
                     <input
                       type="text"
                       required
-                      placeholder="Ví dụ: Thầy Nguyễn Văn A..."
+                      placeholder="Ví dụ: Thầy Dương Đạt..."
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
                       className="w-full pl-10 p-3 rounded-xl border border-slate-200 focus:border-blue-500 text-sm font-semibold text-slate-800 outline-none"
@@ -221,7 +231,7 @@ return (
                   <input
                     type="text"
                     required
-                    placeholder="gv_a"
+                    placeholder="gv_dat"
                     value={newUsername}
                     onChange={(e) => setNewUsername(e.target.value)}
                     className="w-full p-3 rounded-xl border border-slate-200 focus:border-blue-500 text-sm font-semibold text-slate-800 outline-none font-mono"
@@ -233,9 +243,9 @@ return (
                   <div className="relative">
                     <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                     <input
-                      type="password"
+                      type="text"
                       required
-                      placeholder="••••••••"
+                      placeholder="Nhập mật khẩu cấp cho giáo viên..."
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       className="w-full pl-10 p-3 rounded-xl border border-slate-200 focus:border-blue-500 text-sm font-semibold text-slate-800 outline-none"
@@ -271,15 +281,17 @@ return (
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
+                    disabled={isSaving}
                     className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl transition text-sm"
                   >
                     Hủy bỏ
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition text-sm shadow-md shadow-blue-200"
+                    disabled={isSaving}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition text-sm shadow-md shadow-blue-200 flex items-center justify-center"
                   >
-                    Xác nhận cấp tài khoản
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Xác nhận cấp tài khoản'}
                   </button>
                 </div>
               </form>

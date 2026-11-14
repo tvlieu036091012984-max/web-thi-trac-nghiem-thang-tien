@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { GraduationCap, Lock, User, ShieldCheck, Loader2 } from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
 
 export default function AdminLoginPage() {
   const [username, setUsername] = useState('')
@@ -11,14 +12,14 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
 
-    const cleanUser = username.trim()
+    const cleanUser = username.trim().replace(/^@/, '')
 
-    setTimeout(() => {
+    try {
       // 1. Kiểm tra tài khoản ADMIN tối cao của thầy
       if (cleanUser.toUpperCase() === 'ADMIN' && password === 'luuvanglien0410') {
         localStorage.setItem('user_role', 'ADMIN')
@@ -28,32 +29,38 @@ export default function AdminLoginPage() {
         return
       }
 
-      // 2. Tra cứu danh sách giáo viên thực tế từ localStorage (đã đồng bộ với trang Quản lý giáo viên)
-      const savedTeachers = localStorage.getItem('teachers_list')
-      let teacherFound = null
+      // 2. Tra cứu tài khoản giáo viên / trợ giảng trực tiếp từ bảng teachers trên Supabase
+      const supabase = createClient()
+      const { data: teacherFound, error: dbError } = await supabase
+        .from('teachers')
+        .select('*')
+        .ilike('username', cleanUser)
+        .maybeSingle()
 
-      if (savedTeachers) {
-        try {
-          const list = JSON.parse(savedTeachers)
-          teacherFound = list.find((t: any) => t.username.toLowerCase() === cleanUser.toLowerCase())
-        } catch (e) {
-          console.error("Lỗi đọc danh sách giáo viên:", e)
-        }
+      if (dbError) {
+        console.error('Lỗi kết nối Supabase:', dbError.message)
       }
 
-      // 3. CHỈ CHO PHÉP ĐĂNG NHẬP NẾU TÀI KHOẢN CÒN TỒN TẠI VÀ ĐÚNG TÊN ĐĂNG NHẬP ĐÃ CẤP
-      if (teacherFound && password.length >= 1) {
-        localStorage.setItem('user_role', 'GIAOVIEN')
+      // 3. Kiểm tra khớp đúng mật khẩu và trạng thái hoạt động
+      if (teacherFound && teacherFound.password === password && teacherFound.status === 'Hoạt động') {
+        const isTopAdmin =
+          teacherFound.username.toLowerCase() === 'thaylieu' ||
+          teacherFound.role === 'ADMIN Tối Cao'
+
+        localStorage.setItem('user_role', isTopAdmin ? 'ADMIN' : 'GIAOVIEN')
         localStorage.setItem('user_name', teacherFound.name)
         localStorage.setItem('teacher_username', teacherFound.username)
         router.push('/admin/dashboard')
         return
       }
 
-      // Nếu tài khoản đã bị xóa hoặc không tồn tại trong hệ thống quản lý
       setError('Tên đăng nhập hoặc mật khẩu không chính xác!')
+    } catch (err) {
+      console.error('Lỗi đăng nhập:', err)
+      setError('Có lỗi xảy ra khi kết nối máy chủ, vui lòng thử lại!')
+    } finally {
       setLoading(false)
-    }, 600)
+    }
   }
 return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-orange-50 flex items-center justify-center p-4 font-sans">
